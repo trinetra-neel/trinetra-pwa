@@ -7064,7 +7064,7 @@ function decisionReviewHTML194(cid){const sets=extractDecision194(cid);return `<
 const openPostBase194=window.openPostReview190;if(typeof openPostBase194==='function')window.openPostReview190=function(cid){const r=openPostBase194.apply(this,arguments);const body=document.querySelector('#postReviewDialog190 .dialog-body');if(body&&!body.querySelector('.v194-review-data'))body.insertAdjacentHTML('afterbegin',decisionReviewHTML194(cid));return r};
 const printPostBase194=window.printPostReview190;if(typeof printPostBase194==='function')window.printPostReview190=async function(cid){const c=state.tradeCycles?.[cid],r=state.postClosingReviews190?.[cid]||{};if(!c)return;const doc=window.open('','_blank');if(!doc)return toast('Allow popup for PDF report');const shots=await idbAll().catch(()=>[]),mp=new Map(shots.map(x=>[x.id,x])),imgs=[...(r.chartIds||[]),...extractDecision194(cid).flatMap(x=>x.chartIds)].filter((x,i,a)=>a.indexOf(x)===i).map(id=>mp.get(id)).filter(x=>x?.data).map(x=>`<img style="max-width:100%;max-height:490px;display:block;margin:10px 0;border:1px solid #bbb;break-inside:avoid" src="${x.data}">`).join('');const x=decisionReviewHTML194(cid).replace(/<button[\s\S]*?<\/button>/g,'')+(typeof window.reviewTradeLogs195==='function'?window.reviewTradeLogs195(cid):'');const html=`<!doctype html><html><head><meta charset="utf-8"><title>${E194(c.symbol)} Post Closing Review</title><style>body{font-family:Arial,sans-serif;color:#182334;max-width:1050px;margin:auto;padding:20px;line-height:1.5}h1{margin-bottom:5px}.muted{color:#526579}.v194-review-data{border:1px solid #bbc9d6;padding:13px;border-radius:6px}.v194-review-data details{margin:7px 0;padding:5px;border-bottom:1px solid #ccc}.v194-review-data details summary{font-weight:bold}.summary-field{padding:3px 0;font-size:12px}button{display:none}.notes{white-space:pre-wrap;padding:12px;border:1px solid #ccc}</style></head><body><h1>${E194(c.symbol)} — Post Closing Review</h1><p>Review date ${E194(r.reviewDate||today194())} · Report generated ${today194()}</p><h2>Post-close observation</h2><div class="notes">${E194(r.notes||'—')}</div><h2>Decision Log data (auto-extracted)</h2>${x}<h2>Linked charts</h2>${imgs||'<p>No linked review charts.</p>'}<script>document.querySelectorAll('details').forEach(x=>x.open=true);setTimeout(()=>window.print(),300)<\/script></body></html>`;doc.document.write(html);doc.document.close()};
 
-function apply194(){ensure194();state.appVersion='1.9.4-test';if(!MAIN_TABS.some(([k])=>k==='capital'))MAIN_TABS.push(['capital','TRADING CAPITAL']);const capIdx=MAIN_TABS.findIndex(([k])=>k==='capital'),revIdx=MAIN_TABS.findIndex(([k])=>k==='review');if(revIdx>=0&&capIdx>=0&&capIdx<revIdx){MAIN_TABS.splice(capIdx,1);MAIN_TABS.splice(MAIN_TABS.findIndex(([k])=>k==='review')+1,0,['capital','TRADING CAPITAL'])}document.title='TRINETRA — For Long Trades · v1.9.4 TEST';const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe · v1.9.4 TEST · Folder Storage";}
+function apply194(){ensure194();state.appVersion='2.0.5';if(!MAIN_TABS.some(([k])=>k==='capital'))MAIN_TABS.push(['capital','TRADING CAPITAL']);const capIdx=MAIN_TABS.findIndex(([k])=>k==='capital'),revIdx=MAIN_TABS.findIndex(([k])=>k==='review');if(revIdx>=0&&capIdx>=0&&capIdx<revIdx){MAIN_TABS.splice(capIdx,1);MAIN_TABS.splice(MAIN_TABS.findIndex(([k])=>k==='review')+1,0,['capital','TRADING CAPITAL'])}document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";}
 const baseRender194=window.render;if(typeof baseRender194==='function')window.render=function(){ensure194();if(ui.main==='capital'){renderNav();document.getElementById('content').innerHTML=renderTradingCapital194();apply194();return;}const r=baseRender194.apply(this,arguments);apply194();const c=document.getElementById('content');if(c&&['mother','daily','weekly','monthly','cup','watch'].includes(ui.main))removeRatingColumn194(c);if(ui.main==='watch')decorateWatch194();if(ui.main==='journal')replaceJournalFin194();return r};try{render=window.render}catch(e){}
 const baseJournal194=window.openJournalCycle18;if(typeof baseJournal194==='function')window.openJournalCycle18=function(cid){const r=baseJournal194.apply(this,arguments);setTimeout(()=>addJournalRibbon194(cid),90);return r};
 const baseStock194=window.renderStockDialog;if(typeof baseStock194==='function')window.renderStockDialog=function(){const r=baseStock194.apply(this,arguments);return r};
@@ -7221,7 +7221,7 @@ window.reviewTradeLogs195=reviewLogs195;
 const postBase195=window.openPostReview190;
 if(typeof postBase195==='function')window.openPostReview190=function(cid){const r=postBase195.apply(this,arguments);const body=document.querySelector('#postReviewDialog190 .dialog-body');if(body&&!body.querySelector('.v195-review-eventlogs'))body.insertAdjacentHTML('afterbegin',reviewLogs195(cid));return r};
 // Product identity guard is UI-only; no capital/portfolio state reset.
-function ident195(){document.title='TRINETRA — For Long Trades · v2.0 FRESH START';const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe · v2.0 FRESH START · Folder Storage";}
+function ident195(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";}
 ident195();setTimeout(ident195,3200);
 console.info('TRINETRA v1.9.5 Test: image-reference layout, per-event Trade Log, chart-side decision fields ready');
 })();
@@ -7376,7 +7376,7 @@ window.printTradeLog196=()=>{
  printView196('TRINETRA — '+title,`<header><h1>${escape196(title)}</h1><div class="muted">${escape196(label)}</div></header><table>${rows}</table>`);
 };
 /* Do not write any state into a fresh file or alter the user's Dropbox folder here. */
-function identity196(){document.title='TRINETRA — For Long Trades · v2.0 FRESH START';const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe · v2.0 FRESH START · Folder Storage";}
+function identity196(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";}
 for(const t of [0,3200,5200,9000])setTimeout(identity196,t);
 console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type timeframes + print available');
 })();
@@ -7391,7 +7391,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 <script>
 (()=>{'use strict';
   const WORKSPACE_ID='TRINETRA_FRESH_2026_10_25';
-  const VERSION='v2.0 · FRESH START';
+  const VERSION='v2.0.5 PWA';
   function labelFresh(){
     document.title='TRINETRA — For Long Trades · '+VERSION;
     const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe · "+VERSION+' · Folder Storage';
@@ -7429,7 +7429,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 </style>
 <script>
 (()=>{'use strict';
- const V='v2.0.4 · PWA LINK TEST';
+ const V='v2.0.5 PWA';
  function label(){document.title='TRINETRA — For Long Trades · '+V;const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe · "+V+' · Folder Storage';}
  function note(){if(location.protocol!=='file:'||document.getElementById('v201FileWarning'))return;const guide=document.getElementById('v200FreshGuide');const n=document.createElement('div');n.id='v201FileWarning';n.className='v201-launch-note';n.innerHTML='<b>DIRECT HTML MODE:</b> Keep this HTML in one permanent location and use the same Chrome/Edge profile. Folder handles are saved per browser origin and may require reconnection in <code>file://</code> mode. Use <b>Dropbox File Sync</b> if you do not want to select a folder on every launch; portable transfers are manual. Existing workspace: use <b>Reload Existing State</b>, never Initialise again.';if(guide)guide.insertAdjacentElement('afterend',n);else document.querySelector('.content')?.insertAdjacentElement('beforebegin',n);}
  const oldRender=window.render;if(typeof oldRender==='function'){window.render=function(){const r=oldRender.apply(this,arguments);label();note();return r;};try{render=window.render}catch(e){}}
@@ -7458,7 +7458,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 </style>
 <script>
 (()=>{'use strict';
- const V203='v2.0.4';
+ const V203='v2.0.5';
  const ID203='TRINETRA_FRESH_2026_10_25';
  const META203='trinetra_fresh_v203_manual_portable_metadata';
  let busy203=false;
@@ -7550,7 +7550,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
    await apply203(payload.state,media,'Dropbox folder '+(st.webkitRelativePath||st.name)+' ('+media.length+' charts, '+missing+' missing)','folder');
   }catch(e){console.error(e);progress203('✕ Folder import failed: '+e.message);alert('Dropbox folder import failed: '+e.message)}finally{ev.target.value='';busy203=false;}
  };
- function label203(){const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe · v2.0.3 DIRECT HTML · Local First";document.title='TRINETRA — For Long Trades · v2.0.3 DIRECT HTML';}
+ function label203(){const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";}
  const baseRender203=window.render; if(typeof baseRender203==='function'){window.render=function(){const r=baseRender203.apply(this,arguments);top203();label203();return r;};try{render=window.render}catch(e){}}
  top203();label203();setTimeout(()=>{top203();label203()},1200);setTimeout(label203,4500);
 })();
@@ -7559,8 +7559,24 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 <script>
 // v2.0.4 startup identity (previous HTML/storage schemas unchanged).
 (function(){
- function label(){const x=document.querySelector('.subbrand');if(x)x.textContent="Neel's Trading Universe · v2.0.4 PWA · Folder Link Diagnostics";document.title='TRINETRA — For Long Trades · v2.0.4';}
+ function label(){const x=document.querySelector('.subbrand');if(x)x.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";}
  label();setTimeout(label,1400);setTimeout(label,5000);
+})();
+</script>
+
+<script id="trinetra_v205_identity_guard">
+(()=>{'use strict';
+const LABEL="Neel's Trading Universe · v2.0.5 PWA · Folder Storage";
+const TITLE='TRINETRA — For Long Trades · v2.0.5';
+const node=document.querySelector('.subbrand');
+let adjusting=false;
+function stabilize(){if(adjusting)return;adjusting=true;
+ try{if(node&&node.textContent!==LABEL)node.textContent=LABEL;
+     if(document.title!==TITLE)document.title=TITLE;}finally{adjusting=false;}}
+if(node){new MutationObserver(stabilize).observe(node,{childList:true,characterData:true,subtree:true});}
+document.addEventListener('visibilitychange',stabilize);
+stabilize();
+// Existing older one-shot timers finish within 9 seconds; the observer permanently handles changes.
 })();
 </script>
 </body>
