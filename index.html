@@ -4316,14 +4316,156 @@ async function flushTombs27(){const a=[...tomb27()];let removed=0;for(const id o
 function statePayload27(){const d=device27();return {type:FS27_STATE_TYPE,workspaceId:'TRINETRA_FRESH_2026_10_25',formatVersion:2,savedAt:now27(),savedBy:{id:d.id,label:d.label||''},media:{external:true,indexFile:'DATA/'+FS27_INDEX},state};}
 async function readState27(){const d=await readJson27(['DATA'],FS27_STATE);if(!d)return null;if(d.type!==FS27_STATE_TYPE||!d.state||d.state.version!==1||d.state.workspaceId!=='TRINETRA_FRESH_2026_10_25'||d.workspaceId!=='TRINETRA_FRESH_2026_10_25')throw new Error('This is not a TRINETRA FRESH START workspace. Select your NEW dedicated Dropbox folder. Existing TRINETRA files are protected.');return d;}
 async function backupRemoteState27(remote){if(!remote)return;await writeJson27(['BACKUP'],`TRINETRA_STATE_${dateStamp27()}.json`,remote);}
-function baseline27(){const m=meta27();return m.lastRemoteSeenAt||m.lastSavedAt||m.lastLoadedAt||'';}
-function newer27(remote){const b=baseline27();return !!(remote?.savedAt&&b&&remote.savedAt>b&&remote.savedBy?.id!==device27().id);}
+/* v2.0.6: state-content/revision based Dropbox conflict detection.
+   A newer timestamp by itself is NOT a conflict; clock skew and duplicated metadata
+   must never force a reload that discards local work.  When content actually diverges,
+   fail closed and offer an explicitly archived, manual resolution. */
+const FS206_BASEHASH_KEY='trinetra_fresh_20261025_folder_baseline_hash_v1';
+let conflict206=null,saveBusy206=false;
+function stateHash206(obj){
+  const raw=typeof obj==='string'?obj:JSON.stringify(obj||{});
+  let h=2166136261>>>0;
+  for(let i=0;i<raw.length;i++){h^=raw.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}
+  return ('00000000'+h.toString(16)).slice(-8)+':'+raw.length;
+}
+function compareState206(s){return stateHash206(s||{});}
+function stamp206(v){try{return v?new Date(v).toLocaleString('en-IN'):'Unknown';}catch(e){return String(v||'Unknown');}}
+function counts206(s){
+  s=s||{};return {runs:(s.runs||[]).length,records:(s.records||[]).length,
+    trades:Object.keys(s.tradeCycles||{}).length,
+    observations:Object.keys(s.observations||{}).length,
+    watchlists:Object.values(s.watchlists||{}).filter(Boolean).length};
+}
+function trustedBase206(remote){
+  if(!remote?.state)return {safe:false,reason:'Dropbox state cannot be verified'};
+  const m=meta27(),remoteHash=compareState206(remote.state),localHash=compareState206(state);
+  if(remoteHash===localHash)return {safe:true,reason:'Local and Dropbox contents already match',remoteHash};
+  if(m.lastRemoteContentHash206&&m.lastRemoteContentHash206===remoteHash)
+    return {safe:true,reason:'Dropbox content matches the last verified sync',remoteHash};
+  if(m.lastRemoteRevision206&&remote.sync206?.revision&&m.lastRemoteRevision206===remote.sync206.revision)
+    return {safe:true,reason:'Dropbox revision matches last verified sync',remoteHash};
+  // Migration from v2.0.5: its local safety system stored the EXACT hash of
+  // last saved/reloaded state, even though Folder Storage did not store a hash.
+  const previous=localStorage.getItem(FS206_BASEHASH_KEY)||'';
+  if(previous&&previous===remoteHash)
+    return {safe:true,reason:'Dropbox matches legacy v2.0.5 saved content',remoteHash};
+  // A savedAt timestamp is a legacy revision token, not a chronological
+  // ordering. Exact match is safe; comparing > or < across devices is not.
+  if(m.lastRemoteSeenAt&&remote.savedAt&&m.lastRemoteSeenAt===remote.savedAt)
+    return {safe:true,reason:'Dropbox save identifier is unchanged',remoteHash};
+  if(m.lastSavedAt&&remote.savedAt&&m.lastSavedAt===remote.savedAt)
+    return {safe:true,reason:'Dropbox is the same save last made here',remoteHash};
+  return {safe:false,reason:'Dropbox differs from the last verified copy, or its baseline cannot be established',remoteHash,localHash};
+}
+function remoteInfo206(remote){
+  return {savedAt:remote?.savedAt||'',savedBy:remote?.savedBy||{},revision:remote?.sync206?.revision||'',hash:compareState206(remote?.state),counts:counts206(remote?.state)};
+}
+function protectLocal206(reason){
+  // This code never deletes browser snapshots or existing Dropbox records.
+  const callback=window.__trinetraCreateSafetySnapshot1827j;
+  if(typeof callback==='function')return callback(reason).catch(e=>console.warn('Local safety snapshot failed',e));
+  return Promise.resolve(null);
+}
+async function strictRemote206(){
+  // Unlike readJson27, NEVER turn read/parse errors into a null workspace;
+  // that could inadvertently cause an overwrite of an unreadable file.
+  const d=await pathDir27(['DATA'],false);
+  let f;
+  try{f=await d.getFileHandle(FS27_STATE,{create:false});}
+  catch(e){if(e?.name==='NotFoundError')return null;throw e;}
+  const text=await(await f.getFile()).text(),remote=JSON.parse(text);
+  if(remote?.type!==FS27_STATE_TYPE||remote?.workspaceId!=='TRINETRA_FRESH_2026_10_25'||
+     remote?.state?.workspaceId!=='TRINETRA_FRESH_2026_10_25'||remote?.state?.version!==1)
+    throw new Error('Dropbox state format/workspace mismatch. Existing DATA was NOT modified.');
+  return remote;
+}
+function recordBaseline206(remote){
+  if(!remote)return;
+  setMeta27({lastRemoteContentHash206:compareState206(remote.state),
+    lastRemoteRevision206:remote.sync206?.revision||'',
+    lastRemoteSeenAt:remote.savedAt||meta27().lastRemoteSeenAt||''});
+}
+function decorateRevision206(payload,remote){
+  payload.sync206={revision:(crypto.randomUUID?crypto.randomUUID():'v206-'+Date.now()+'-'+Math.random().toString(36).slice(2)),
+    basedOn:remote?.sync206?.revision||'',basedOnHash:remote?.state?compareState206(remote.state):'',
+    stateHash:compareState206(payload.state)};
+  return payload;
+}
+async function commitState206(remote,source){
+  // Save immutable snapshot, so edits during the write remain marked unsaved.
+  const snapshot=JSON.parse(JSON.stringify(state));
+  const payload=decorateRevision206(statePayload27(),remote);
+  payload.state=snapshot;
+  payload.sync206.stateHash=compareState206(snapshot);
+  progress27('Saving chart files and state…');
+  const mr=await migrateLocalMedia27((i,n,rec)=>progress27(`Checking media ${i} / ${n} · ${rec?.symbol||''}`));
+  await flushTombs27();await saveIndex27();
+  await writeJson27(['DATA'],FS27_STATE,payload);
+  const check=await strictRemote206();
+  if(!check||check.sync206?.revision!==payload.sync206.revision||compareState206(check.state)!==compareState206(snapshot))
+    throw new Error('Dropbox write verification failed: a different state was read back. Local state remains available.');
+  setMeta27({lastSavedAt:payload.savedAt});recordBaseline206(check);conflict206=null;
+  try{window.__trinetraSetSynced1827j&&window.__trinetraSetSynced1827j(JSON.stringify(snapshot),payload.savedAt)}catch(e){}
+  if(compareState206(state)!==compareState206(snapshot)){
+    try{window.__trinetraAfterLocalSave1827j&&window.__trinetraAfterLocalSave1827j(JSON.stringify(state))}catch(e){}
+  }
+  progress27(`✓ Verified ${source||'Folder'} Save · ${stamp206(payload.savedAt)} · ${mr.written} new chart(s).`);
+  await updateStatus27('Saved '+payload.savedAt);await renderStorage27();
+  return payload;
+}
+function conflictMarkup206(){
+  if(!conflict206)return '';
+  const a=conflict206.remote?.counts||{},b=conflict206.localCounts||{};
+  const note=(x)=>String(x||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return `<section class="v206-conflict"><h3>⚠ Two different versions detected — nothing was overwritten</h3>
+    <p>Dropbox save: <b>${note(stamp206(conflict206.remote?.savedAt))}</b> · by <b>${note(conflict206.remote?.savedBy?.label||conflict206.remote?.savedBy?.id||'Unknown')}</b></p>
+    <p>Last verified here: <b>${note(stamp206(meta27().lastRemoteSeenAt))}</b> · ${note(conflict206.reason)}</p>
+    <div class="v206-compare"><span>Content</span><b>This browser (unsaved)</b><b>Dropbox (existing)</b>
+      ${[['Scanner runs','runs'],['Scanner records','records'],['Trade cycles','trades'],['Observations','observations'],['Watchlist stocks','watchlists']].map(([label,key])=>`<span>${label}</span><b>${b[key]||0}</b><b>${a[key]||0}</b>`).join('')}</div>
+    <p>To preserve this computer's entries, first download a <b>Backup</b>. <b>Reload State</b> replaces current browser data (a safety snapshot is created). If the local version is correct, use the explicit archived resolution below; the Dropbox copy will be backed up first.</p>
+    <div class="v27-actions"><button class="btn" onclick="exportBackup()">⬇ Download Local Backup</button>
+    <button class="btn danger" onclick="resolveKeepLocal206()">Archive BOTH copies &amp; keep this browser's version</button></div></section>`;
+}
+window.resolveKeepLocal206=async function(){
+  if(saveBusy206)return alert('Save already in progress.');
+  if(!root27||!conflict206)return alert('No current conflict.');
+  const text=`⚠ ADVANCED CONFLICT RESOLUTION\n\nThis saves the current browser state to Dropbox, replacing the conflicting Dropbox state.\n\nBEFORE replacement, the current Dropbox state and local state will BOTH be copied and verified in the Dropbox BACKUP folder.\n\nThere is NO automatic merge. Any changes unique to the Dropbox copy will no longer be in the active state (but remain archived).\n\nUse this ONLY after comparing your local and Dropbox data.\n\nContinue to a second confirmation?`;
+  if(!confirm(text))return;
+  const typed=prompt('Type KEEP LOCAL to confirm (otherwise nothing changes):','');
+  if(typed!=='KEEP LOCAL')return;
+  saveBusy206=true;
+  try{
+    if(!(await perm27(root27,true,true)))throw new Error('Write permission required.');
+    const newest=await strictRemote206();
+    if(!newest)throw new Error('Dropbox state cannot be read. Nothing written.');
+    if(compareState206(newest.state)!==conflict206.remote.hash||newest.savedAt!==conflict206.remote.savedAt)
+      throw new Error('Dropbox changed since the conflict was shown. Nothing overwritten. Click Save State again to review.');
+    await ensureTree27();await protectLocal206('Before conflict resolution / Keep Local');
+    const tag=dateStamp27();
+    const remoteName=`TRINETRA_REMOTE_BEFORE_KEEP_LOCAL_${tag}.json`;
+    const localName=`TRINETRA_LOCAL_BEFORE_KEEP_LOCAL_${tag}.json`;
+    const localArchive={type:'TRINETRA_LOCAL_BEFORE_KEEP_LOCAL_V2',
+      exportedAt:now27(),state:JSON.parse(JSON.stringify(state))};
+    await writeJson27(['BACKUP'],remoteName,newest);
+    await writeJson27(['BACKUP'],localName,localArchive);
+    const rCheck=await readJson27(['BACKUP'],remoteName),lCheck=await readJson27(['BACKUP'],localName);
+    if(!rCheck||!lCheck||compareState206(rCheck.state)!==compareState206(newest.state)||
+       compareState206(lCheck.state)!==compareState206(localArchive.state))
+      throw new Error('Conflict archives did not verify. Dropbox active state was NOT overwritten.');
+    const fresh=await strictRemote206();
+    if(!fresh||compareState206(fresh.state)!==compareState206(newest.state)||fresh.savedAt!==newest.savedAt)
+      throw new Error('Dropbox changed during archive creation. Active state was NOT overwritten.');
+    await commitState206(fresh,'Archived conflict resolution');
+    alert('Resolved: current browser state saved. BOTH versions archived in Dropbox/BACKUP. Review scanner runs and observations before switching devices.');
+  }catch(e){console.error(e);progress27('✕ Conflict resolution stopped: '+e.message);alert('Conflict resolution was stopped. '+e.message);}
+  finally{saveBusy206=false;await renderStorage27().catch(console.warn);}
+};
 
 async function updateStatus27(message){folderStatus27=message||folderStatus27;const top=document.getElementById('portableSyncStatus');let granted=false;if(root27)granted=await perm27(root27,true,false);if(top){top.className='sync-status-chip '+(!root27?'':granted?'ready':'warn');top.innerHTML='<span class="dot"></span><span class="sync-status-text">'+(!root27?'LOCAL MODE · Dropbox file sync available':granted?'Folder ready':'Permission needed')+'</span>';top.title=root27?`Folder: ${root27.name||'TRINETRA_NEW'} · ${folderStatus27||'Folder storage'}`:'Folder Storage is optional. For direct HTML use the Dropbox File Sync button.';}const btn=document.getElementById('portableSyncBtn');if(btn){btn.innerHTML='▣ <span>Folder Storage</span>';btn.title='TRINETRA Dropbox folder storage';}const rb=document.getElementById('restoreBackupBtn');if(rb)rb.title='Restore data backup';try{window.__trinetraRefreshSyncStatus1827j&&window.__trinetraRefreshSyncStatus1827j({linked:!!root27,granted:!!granted,status:folderStatus27})}catch(e){}}
 function storageCounts27(localCount=0){const remote=Object.keys(index27.records||{}).length,pending=Math.max(0,localCount-remote);return {remote,pending};}
 
 function ensureModal27(){if(document.getElementById('folderStorageModal1827'))return;const m=document.createElement('div');m.id='folderStorageModal1827';m.className='modal v27-modal';m.innerHTML='<div class="dialog sm"><div class="dialog-head"><div><b>TRINETRA Folder Storage</b><div class="muted" style="font-size:12px">Small state JSON + individual chart files · Dropbox remains the transport between devices</div></div><div class="spacer"></div><button class="btn small ghost" onclick="closeFolderStorage1827()">✕</button></div><div class="dialog-body" id="folderStorageBody1827"></div></div>';document.body.appendChild(m);m.addEventListener('click',e=>{if(e.target.id==='folderStorageModal1827')closeFolderStorage1827()});}
-async function renderStorage27(){ensureModal27();const b=document.getElementById('folderStorageBody1827');if(!b)return;let granted=false,readOK=false,localCount=0,stateExists=false;if(root27){granted=await perm27(root27,true,false);readOK=granted||await perm27(root27,false,false);if(readOK){try{await ensureTree27();await loadIndex27();stateExists=await fileExists27(['DATA'],FS27_STATE);}catch(e){}}}if(legacyIdbAll27){try{localCount=(await legacyIdbAll27()).length}catch(e){}}const c=storageCounts27(localCount),m=meta27(),d=device27();const folderOK=!!root27,initOK=!!(folderOK&&stateExists&&(m.initializedAt||m.lastLoadedAt)),initText=!folderOK?'⚠ Folder is not connected in this browser session — your Dropbox data is unaffected.':(m.initializedAt?'✓ Folder Storage initialised successfully':(m.lastLoadedAt?'✓ Existing Folder State connected successfully':'○ Folder selected — Initialise only if empty, otherwise Reload Existing State')),mediaOK=stateExists&&c.remote>=0;b.innerHTML=`<div class="v27-grid"><div class="v27-card"><h3>1 · Root Folder</h3><div class="v27-kv"><span>Selected</span><b class="${folderOK?'v27-good':'v27-warn'}">${folderOK?'✓ '+safe27(root27.name,'TRINETRA'):'Not selected'}</b><span>Write permission</span><b class="${granted?'v27-good':'v27-warn'}">${root27?(granted?'✓ Granted':'⚠ Needed'):'—'}</b><span>State file</span><b class="${stateExists?'v27-good':'v27-warn'}">${stateExists?'✓ DATA / '+FS27_STATE:'⚠ Not created yet'}</b></div><div class="v27-actions"><button class="btn primary" onclick="selectFolder1827()">${root27?'Change Folder':'Select / Reconnect Folder'}</button>${root27&&!granted?'<button class="btn" onclick="grantFolderPermission1827()">Grant Permission</button>':''}<button class="btn danger" onclick="disconnectFolder1827()" ${root27?'':'disabled'}>Disconnect</button></div><div class="v27-note">Choose your existing <b>Dropbox / TRINETRA_NEW</b> folder. If it already has DATA/TRINETRA_STATE.json, use <b>Reload Existing State</b>, NOT Initialise. The old TRINETRA archive remains protected. Folder access is remembered per browser origin, profile and device.</div><div class="v27-statusline ${initOK?'ok':'pending'}">${initText}</div><div class="v27-diagnostic"><button class="btn small" onclick="checkFolderLink204()">🔎 Check Saved Folder Link</button><span class="muted" style="font-size:11px">Verifies whether Chrome actually stored the folder handle (without changing Dropbox).</span><pre id="v204HandleDiagnostics" style="font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;color:#c7d8ec"></pre></div></div><div class="v27-card"><h3>2 · First-time Migration / Existing State</h3><div class="v27-actions"><button class="btn v27-migrate" onclick="initialiseFolder1827()" ${root27?'':'disabled'}>Initialise Fresh Workspace</button><button class="btn" onclick="reloadFolderState1827()" ${root27&&stateExists?'':'disabled'}>Reload Existing State</button></div><div class="v27-note"><b>Only when creating a brand-new, empty workspace:</b> Initialise Fresh Workspace. <b>Every existing workspace:</b> Reload Existing State. Never re-initialise an already-used folder. Do not use the old Dropbox/TRINETRA folder. Initial migration copies existing IndexedDB charts into separate files and writes a new small state JSON.</div><div class="v27-note"><b>BACKUP folder:</b> it is normal for this to be empty on the first successful migration. It receives an automatic safety copy only when Initialise is used to replace an already-existing TRINETRA_STATE.json. The top-bar Backup button still downloads a separate backup file through the browser.</div></div><div class="v27-card"><h3>3 · Daily Hand-off</h3><div class="v27-actions"><button class="btn primary" onclick="saveFolderState1827()" ${root27?'':'disabled'}>Save State</button><button class="btn" onclick="reloadFolderState1827()" ${root27&&stateExists?'':'disabled'}>Reload State</button><button class="btn" onclick="syncMediaCache1827()" ${root27?'':'disabled'}>Sync Media Cache</button></div><div class="v27-kv"><span>Remote media files</span><b class="${stateExists?'v27-good':''}">${stateExists?'✓ ':''}${c.remote.toLocaleString('en-IN')}</b><span>Local cached charts</span><b>${localCount.toLocaleString('en-IN')}</b><span>Last save</span><b class="${m.lastSavedAt?'v27-good':''}">${m.lastSavedAt?'✓ '+new Date(m.lastSavedAt).toLocaleString():'—'}</b><span>Last reload</span><b class="${m.lastLoadedAt?'v27-good':''}">${m.lastLoadedAt?'✓ '+new Date(m.lastLoadedAt).toLocaleString():'—'}</b></div><div id="folderProgress1827" class="v27-progress">${folderStatus27||'Ready.'}</div></div><div class="v27-card"><h3>Device</h3><label class="muted" style="font-size:11px">Device label</label><input class="search" style="margin-top:5px" value="${String(d.label||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="e.g. Office Desktop" onchange="setFolderDeviceLabel1827(this.value)"><div class="v27-note">Dropbox should say <b>Up to date</b> before switching devices. Do not edit on both devices simultaneously.</div></div></div>`;}
+async function renderStorage27(){ensureModal27();const b=document.getElementById('folderStorageBody1827');if(!b)return;let granted=false,readOK=false,localCount=0,stateExists=false;if(root27){granted=await perm27(root27,true,false);readOK=granted||await perm27(root27,false,false);if(readOK){try{await ensureTree27();await loadIndex27();stateExists=await fileExists27(['DATA'],FS27_STATE);}catch(e){}}}if(legacyIdbAll27){try{localCount=(await legacyIdbAll27()).length}catch(e){}}const c=storageCounts27(localCount),m=meta27(),d=device27();const folderOK=!!root27,initOK=!!(folderOK&&stateExists&&(m.initializedAt||m.lastLoadedAt)),initText=!folderOK?'⚠ Folder is not connected in this browser session — your Dropbox data is unaffected.':(m.initializedAt?'✓ Folder Storage initialised successfully':(m.lastLoadedAt?'✓ Existing Folder State connected successfully':'○ Folder selected — Initialise only if empty, otherwise Reload Existing State')),mediaOK=stateExists&&c.remote>=0;b.innerHTML=`<div class="v27-grid"><div class="v27-card"><h3>1 · Root Folder</h3><div class="v27-kv"><span>Selected</span><b class="${folderOK?'v27-good':'v27-warn'}">${folderOK?'✓ '+safe27(root27.name,'TRINETRA'):'Not selected'}</b><span>Write permission</span><b class="${granted?'v27-good':'v27-warn'}">${root27?(granted?'✓ Granted':'⚠ Needed'):'—'}</b><span>State file</span><b class="${stateExists?'v27-good':'v27-warn'}">${stateExists?'✓ DATA / '+FS27_STATE:'⚠ Not created yet'}</b></div><div class="v27-actions"><button class="btn primary" onclick="selectFolder1827()">${root27?'Change Folder':'Select / Reconnect Folder'}</button>${root27&&!granted?'<button class="btn" onclick="grantFolderPermission1827()">Grant Permission</button>':''}<button class="btn danger" onclick="disconnectFolder1827()" ${root27?'':'disabled'}>Disconnect</button></div><div class="v27-note">Choose your existing <b>Dropbox / TRINETRA_NEW</b> folder. If it already has DATA/TRINETRA_STATE.json, use <b>Reload Existing State</b>, NOT Initialise. The old TRINETRA archive remains protected. Folder access is remembered per browser origin, profile and device.</div><div class="v27-statusline ${initOK?'ok':'pending'}">${initText}</div><div class="v27-diagnostic"><button class="btn small" onclick="checkFolderLink204()">🔎 Check Saved Folder Link</button><span class="muted" style="font-size:11px">Verifies whether Chrome actually stored the folder handle (without changing Dropbox).</span><pre id="v204HandleDiagnostics" style="font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;color:#c7d8ec"></pre></div></div><div class="v27-card"><h3>2 · First-time Migration / Existing State</h3><div class="v27-actions"><button class="btn v27-migrate" onclick="initialiseFolder1827()" ${root27?'':'disabled'}>Initialise Fresh Workspace</button><button class="btn" onclick="reloadFolderState1827()" ${root27&&stateExists?'':'disabled'}>Reload Existing State</button></div><div class="v27-note"><b>Only when creating a brand-new, empty workspace:</b> Initialise Fresh Workspace. <b>Every existing workspace:</b> Reload Existing State. Never re-initialise an already-used folder. Do not use the old Dropbox/TRINETRA folder. Initial migration copies existing IndexedDB charts into separate files and writes a new small state JSON.</div><div class="v27-note"><b>BACKUP folder:</b> it is normal for this to be empty on the first successful migration. It receives an automatic safety copy only when Initialise is used to replace an already-existing TRINETRA_STATE.json. The top-bar Backup button still downloads a separate backup file through the browser.</div></div><div class="v27-card"><h3>3 · Daily Hand-off</h3><div class="v27-actions"><button class="btn primary" onclick="saveFolderState1827()" ${root27?'':'disabled'}>Save State</button><button class="btn" onclick="reloadFolderState1827()" ${root27&&stateExists?'':'disabled'}>Reload State</button><button class="btn" onclick="syncMediaCache1827()" ${root27?'':'disabled'}>Sync Media Cache</button></div><div class="v27-kv"><span>Remote media files</span><b class="${stateExists?'v27-good':''}">${stateExists?'✓ ':''}${c.remote.toLocaleString('en-IN')}</b><span>Local cached charts</span><b>${localCount.toLocaleString('en-IN')}</b><span>Last save</span><b class="${m.lastSavedAt?'v27-good':''}">${m.lastSavedAt?'✓ '+new Date(m.lastSavedAt).toLocaleString():'—'}</b><span>Last reload</span><b class="${m.lastLoadedAt?'v27-good':''}">${m.lastLoadedAt?'✓ '+new Date(m.lastLoadedAt).toLocaleString():'—'}</b></div><div id="folderProgress1827" class="v27-progress">${folderStatus27||'Ready.'}</div>${conflictMarkup206()}</div><div class="v27-card"><h3>Device</h3><label class="muted" style="font-size:11px">Device label</label><input class="search" style="margin-top:5px" value="${String(d.label||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="e.g. Office Desktop" onchange="setFolderDeviceLabel1827(this.value)"><div class="v27-note">Dropbox should say <b>Up to date</b> before switching devices. Do not edit on both devices simultaneously.</div></div></div>`;}
 function progress27(text){folderStatus27=text;const p=document.getElementById('folderProgress1827');if(p)p.textContent=text;}
 window.checkFolderLink204=async function(){
   const el=document.getElementById('v204HandleDiagnostics');if(!el)return;
@@ -4353,9 +4495,51 @@ window.disconnectFolder1827=async function(){if(!root27)return;if(!confirm('Disc
 
 window.initialiseFolder1827=async function(){if(!root27)return;const ok=await perm27(root27,true,true);if(!ok)return alert('Write permission is required.');await ensureTree27();await loadIndex27();const existing=await readJson27(['DATA'],FS27_STATE);if(existing&&(existing.workspaceId!=='TRINETRA_FRESH_2026_10_25'||existing.state?.workspaceId!=='TRINETRA_FRESH_2026_10_25'))return alert('Protected: another TRINETRA workspace exists here. Select an empty TRINETRA_NEW folder.');if(existing&&!confirm('A TRINETRA_STATE.json already exists in this folder. Initialise will back it up and replace it with THIS BROWSER\'S current state.\n\nIf the folder copy is newer, cancel and use Reload Existing State.'))return;try{if(existing)await backupRemoteState27(existing);progress27('Migrating existing chart cache to individual Dropbox files…');const r=await migrateLocalMedia27((i,n,rec)=>progress27(`Migrating charts ${i} / ${n} · ${rec?.symbol||''}`));await flushTombs27();await saveIndex27();const p=statePayload27();await writeJson27(['DATA'],FS27_STATE,p);const verifyState=await readJson27(['DATA'],FS27_STATE),verifyIndex=await readJson27(['DATA'],FS27_INDEX);if(!verifyState||verifyState.type!==FS27_STATE_TYPE)throw new Error('State JSON verification failed after write');if(!verifyIndex||verifyIndex.type!==FS27_INDEX_TYPE)throw new Error('Media index verification failed after write');setMeta27({lastSavedAt:p.savedAt,lastRemoteSeenAt:p.savedAt,initializedAt:now27()});try{window.__trinetraSetSynced1827j&&window.__trinetraSetSynced1827j(JSON.stringify(state),p.savedAt)}catch(e){}progress27(`✓ Migration complete · ${r.total} local chart(s) checked · ${r.written} new media file(s) written${r.pending?' · '+r.pending+' pending':''}. State JSON + Media Index verified.`);await updateStatus27('Initialised');await renderStorage27();if(typeof render==='function')render();}catch(e){console.error(e);progress27('✕ Migration failed: '+e.message);alert('Initialise / Migrate failed: '+e.message);}};
 
-window.saveFolderState1827=async function(){if(!root27)return;if(state.workspaceId!=='TRINETRA_FRESH_2026_10_25')return alert('Fresh workspace safety: cannot sync a state from a different installation.');const ok=await perm27(root27,true,true);if(!ok)return alert('Write permission is required.');try{await ensureTree27();await loadIndex27();const remote=await readState27();if(remote&&!meta27().lastRemoteSeenAt&&!meta27().initializedAt&&!meta27().lastLoadedAt){progress27('An existing workspace was found. Reload Existing State before first Save in this browser.');return alert('This Dropbox folder already contains TRINETRA data. On this browser/origin, click Reload Existing State before saving to prevent overwriting it. Do NOT initialise.');}if(remote&&newer27(remote)){progress27('Save blocked: Dropbox state is newer. Reload State first.');return alert('Save blocked because the Dropbox state is newer than this browser. Reload State first, review it, then save.');}progress27('Saving any new chart files…');const mr=await migrateLocalMedia27((i,n,rec)=>progress27(`Checking media ${i} / ${n} · ${rec?.symbol||''}`));await flushTombs27();await saveIndex27();const payload=statePayload27();await writeJson27(['DATA'],FS27_STATE,payload);setMeta27({lastSavedAt:payload.savedAt,lastRemoteSeenAt:payload.savedAt});try{window.__trinetraSetSynced1827j&&window.__trinetraSetSynced1827j(JSON.stringify(state),payload.savedAt)}catch(e){}progress27(`✓ State saved · ${mr.written} new chart file(s) added · existing chart files were not rewritten.`);await updateStatus27('Saved '+payload.savedAt);await renderStorage27();}catch(e){console.error(e);progress27('✕ Save failed: '+e.message);alert('Folder Save failed: '+e.message);}};
+window.saveFolderState1827=async function(){
+  if(saveBusy206)return alert('A save is already running.');
+  if(!root27)return alert('Connect the existing Dropbox folder first.');
+  if(state.workspaceId!=='TRINETRA_FRESH_2026_10_25')return alert('Workspace safety: cannot sync a different installation.');
+  saveBusy206=true;
+  try{
+    const ok=await perm27(root27,true,true);if(!ok)throw new Error('Write permission is required.');
+    // Fail CLOSED: inability to read is NOT treated as a missing file.
+    const remote=await strictRemote206();
+    if(!remote){progress27('Save stopped: DATA/TRINETRA_STATE.json is absent. Never initialise an existing workspace.');
+      return alert('State file not found. Verify the selected Dropbox folder and let Dropbox sync. This save made no changes.');}
+    const result=trustedBase206(remote);
+    if(!result.safe){
+      conflict206={remote:remoteInfo206(remote),localCounts:counts206(state),reason:result.reason};
+      progress27('Save safely paused: Dropbox content differs. Review the two versions below; no files were changed.');
+      await renderStorage27();
+      return alert('Save paused to protect TWO different TRINETRA copies. Your unsaved browser changes are still present. In Folder Storage → Daily Hand-off, review the conflict panel; first download a Backup. Do NOT directly Reload if the latest entries are only on this PC.');
+    }
+    await commitState206(remote,result.reason);
+  }catch(e){console.error('TRINETRA v2.0.6 folder save',e);progress27('✕ Save failed without replacing Dropbox state: '+e.message);
+    alert('Folder Save stopped: '+e.message);}
+  finally{saveBusy206=false;}
+};
 
-window.reloadFolderState1827=async function(){if(!root27)return;let ok=await perm27(root27,false,false);if(!ok)ok=await perm27(root27,false,true);if(!ok)return alert('Read permission is required.');try{await ensureTree27();const remote=await readState27();if(!remote)return alert('No DATA/TRINETRA_STATE.json exists yet. Use Initialise / Migrate on the device that currently has the correct data.');let go=true;if(window.__trinetraBeforeRemoteReload1827j)go=await window.__trinetraBeforeRemoteReload1827j(remote);else go=confirm(`Reload Dropbox state saved ${new Date(remote.savedAt).toLocaleString()}?\n\nThis replaces this browser's current TRINETRA state. Chart files remain external and are loaded on demand.`);if(!go){progress27('Reload cancelled. Local state was not changed.');return;}try{window.__TRINETRA_SUPPRESS_DIRTY_1827J=true;state=remote.state;saveState();}finally{window.__TRINETRA_SUPPRESS_DIRTY_1827J=false;}await loadIndex27();setMeta27({lastLoadedAt:now27(),lastRemoteSeenAt:remote.savedAt});try{window.__trinetraSetSynced1827j&&window.__trinetraSetSynced1827j(JSON.stringify(state),remote.savedAt)}catch(e){}progress27(`✓ State reloaded. Media index has ${Object.keys(index27.records||{}).length.toLocaleString('en-IN')} chart(s); images load from Dropbox on demand and are cached locally.`);if(typeof render==='function')render();await updateStatus27('Reloaded '+remote.savedAt);await renderStorage27();}catch(e){console.error(e);progress27('✕ Reload failed: '+e.message);alert('Reload State failed: '+e.message);}};
+window.reloadFolderState1827=async function(){
+  if(!root27)return;
+  let ok=await perm27(root27,false,false);if(!ok)ok=await perm27(root27,false,true);
+  if(!ok)return alert('Read permission is required.');
+  try{
+    const remote=await strictRemote206();
+    if(!remote)return alert('DATA/TRINETRA_STATE.json was not found. Do NOT initialise an existing folder.');
+    let go=true;
+    if(window.__trinetraBeforeRemoteReload1827j)go=await window.__trinetraBeforeRemoteReload1827j(remote);
+    else go=confirm(`Reload Dropbox state saved ${stamp206(remote.savedAt)}? This replaces the current browser state.`);
+    if(!go){progress27('Reload cancelled: local browser data unchanged.');return;}
+    try{window.__TRINETRA_SUPPRESS_DIRTY_1827J=true;state=remote.state;saveState();}
+    finally{window.__TRINETRA_SUPPRESS_DIRTY_1827J=false;}
+    await loadIndex27();
+    setMeta27({lastLoadedAt:now27()});recordBaseline206(remote);conflict206=null;
+    try{window.__trinetraSetSynced1827j&&window.__trinetraSetSynced1827j(JSON.stringify(state),remote.savedAt)}catch(e){}
+    progress27(`✓ Dropbox state reloaded (saved ${stamp206(remote.savedAt)}). Chart index has ${Object.keys(index27.records||{}).length.toLocaleString('en-IN')} media record(s).`);
+    if(typeof render==='function')render();
+    await updateStatus27('Reloaded '+remote.savedAt);await renderStorage27();
+  }catch(e){console.error('TRINETRA v2.0.6 reload',e);progress27('✕ Reload stopped: '+e.message);alert('Reload State stopped: '+e.message);}
+};
 
 window.syncMediaCache1827=async function(){if(!root27)return;let ok=await perm27(root27,false,false);if(!ok)ok=await perm27(root27,false,true);if(!ok)return alert('Read permission is required.');try{await loadIndex27();progress27('Synchronising missing chart files into this browser cache…');const n=await hydrateAll27((i,total,e)=>progress27(`Media cache ${i} / ${total} · ${e?.symbol||''}`));progress27(`✓ Media cache up to date · ${n} missing chart(s) loaded this time.`);if(typeof render==='function')render();await renderStorage27();}catch(e){console.error(e);progress27('✕ Media cache sync failed: '+e.message);alert('Sync Media Cache failed: '+e.message);}};
 
@@ -7064,7 +7248,7 @@ function decisionReviewHTML194(cid){const sets=extractDecision194(cid);return `<
 const openPostBase194=window.openPostReview190;if(typeof openPostBase194==='function')window.openPostReview190=function(cid){const r=openPostBase194.apply(this,arguments);const body=document.querySelector('#postReviewDialog190 .dialog-body');if(body&&!body.querySelector('.v194-review-data'))body.insertAdjacentHTML('afterbegin',decisionReviewHTML194(cid));return r};
 const printPostBase194=window.printPostReview190;if(typeof printPostBase194==='function')window.printPostReview190=async function(cid){const c=state.tradeCycles?.[cid],r=state.postClosingReviews190?.[cid]||{};if(!c)return;const doc=window.open('','_blank');if(!doc)return toast('Allow popup for PDF report');const shots=await idbAll().catch(()=>[]),mp=new Map(shots.map(x=>[x.id,x])),imgs=[...(r.chartIds||[]),...extractDecision194(cid).flatMap(x=>x.chartIds)].filter((x,i,a)=>a.indexOf(x)===i).map(id=>mp.get(id)).filter(x=>x?.data).map(x=>`<img style="max-width:100%;max-height:490px;display:block;margin:10px 0;border:1px solid #bbb;break-inside:avoid" src="${x.data}">`).join('');const x=decisionReviewHTML194(cid).replace(/<button[\s\S]*?<\/button>/g,'')+(typeof window.reviewTradeLogs195==='function'?window.reviewTradeLogs195(cid):'');const html=`<!doctype html><html><head><meta charset="utf-8"><title>${E194(c.symbol)} Post Closing Review</title><style>body{font-family:Arial,sans-serif;color:#182334;max-width:1050px;margin:auto;padding:20px;line-height:1.5}h1{margin-bottom:5px}.muted{color:#526579}.v194-review-data{border:1px solid #bbc9d6;padding:13px;border-radius:6px}.v194-review-data details{margin:7px 0;padding:5px;border-bottom:1px solid #ccc}.v194-review-data details summary{font-weight:bold}.summary-field{padding:3px 0;font-size:12px}button{display:none}.notes{white-space:pre-wrap;padding:12px;border:1px solid #ccc}</style></head><body><h1>${E194(c.symbol)} — Post Closing Review</h1><p>Review date ${E194(r.reviewDate||today194())} · Report generated ${today194()}</p><h2>Post-close observation</h2><div class="notes">${E194(r.notes||'—')}</div><h2>Decision Log data (auto-extracted)</h2>${x}<h2>Linked charts</h2>${imgs||'<p>No linked review charts.</p>'}<script>document.querySelectorAll('details').forEach(x=>x.open=true);setTimeout(()=>window.print(),300)<\/script></body></html>`;doc.document.write(html);doc.document.close()};
 
-function apply194(){ensure194();state.appVersion='2.0.5';if(!MAIN_TABS.some(([k])=>k==='capital'))MAIN_TABS.push(['capital','TRADING CAPITAL']);const capIdx=MAIN_TABS.findIndex(([k])=>k==='capital'),revIdx=MAIN_TABS.findIndex(([k])=>k==='review');if(revIdx>=0&&capIdx>=0&&capIdx<revIdx){MAIN_TABS.splice(capIdx,1);MAIN_TABS.splice(MAIN_TABS.findIndex(([k])=>k==='review')+1,0,['capital','TRADING CAPITAL'])}document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";}
+function apply194(){ensure194();state.appVersion='2.0.5';if(!MAIN_TABS.some(([k])=>k==='capital'))MAIN_TABS.push(['capital','TRADING CAPITAL']);const capIdx=MAIN_TABS.findIndex(([k])=>k==='capital'),revIdx=MAIN_TABS.findIndex(([k])=>k==='review');if(revIdx>=0&&capIdx>=0&&capIdx<revIdx){MAIN_TABS.splice(capIdx,1);MAIN_TABS.splice(MAIN_TABS.findIndex(([k])=>k==='review')+1,0,['capital','TRADING CAPITAL'])}document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";}
 const baseRender194=window.render;if(typeof baseRender194==='function')window.render=function(){ensure194();if(ui.main==='capital'){renderNav();document.getElementById('content').innerHTML=renderTradingCapital194();apply194();return;}const r=baseRender194.apply(this,arguments);apply194();const c=document.getElementById('content');if(c&&['mother','daily','weekly','monthly','cup','watch'].includes(ui.main))removeRatingColumn194(c);if(ui.main==='watch')decorateWatch194();if(ui.main==='journal')replaceJournalFin194();return r};try{render=window.render}catch(e){}
 const baseJournal194=window.openJournalCycle18;if(typeof baseJournal194==='function')window.openJournalCycle18=function(cid){const r=baseJournal194.apply(this,arguments);setTimeout(()=>addJournalRibbon194(cid),90);return r};
 const baseStock194=window.renderStockDialog;if(typeof baseStock194==='function')window.renderStockDialog=function(){const r=baseStock194.apply(this,arguments);return r};
@@ -7221,7 +7405,7 @@ window.reviewTradeLogs195=reviewLogs195;
 const postBase195=window.openPostReview190;
 if(typeof postBase195==='function')window.openPostReview190=function(cid){const r=postBase195.apply(this,arguments);const body=document.querySelector('#postReviewDialog190 .dialog-body');if(body&&!body.querySelector('.v195-review-eventlogs'))body.insertAdjacentHTML('afterbegin',reviewLogs195(cid));return r};
 // Product identity guard is UI-only; no capital/portfolio state reset.
-function ident195(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";}
+function ident195(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";}
 ident195();setTimeout(ident195,3200);
 console.info('TRINETRA v1.9.5 Test: image-reference layout, per-event Trade Log, chart-side decision fields ready');
 })();
@@ -7376,7 +7560,7 @@ window.printTradeLog196=()=>{
  printView196('TRINETRA — '+title,`<header><h1>${escape196(title)}</h1><div class="muted">${escape196(label)}</div></header><table>${rows}</table>`);
 };
 /* Do not write any state into a fresh file or alter the user's Dropbox folder here. */
-function identity196(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";}
+function identity196(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";}
 for(const t of [0,3200,5200,9000])setTimeout(identity196,t);
 console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type timeframes + print available');
 })();
@@ -7391,7 +7575,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 <script>
 (()=>{'use strict';
   const WORKSPACE_ID='TRINETRA_FRESH_2026_10_25';
-  const VERSION='v2.0.5 PWA';
+  const VERSION='v2.0.6 PWA';
   function labelFresh(){
     document.title='TRINETRA — For Long Trades · '+VERSION;
     const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe · "+VERSION+' · Folder Storage';
@@ -7429,7 +7613,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 </style>
 <script>
 (()=>{'use strict';
- const V='v2.0.5 PWA';
+ const V='v2.0.6 PWA';
  function label(){document.title='TRINETRA — For Long Trades · '+V;const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe · "+V+' · Folder Storage';}
  function note(){if(location.protocol!=='file:'||document.getElementById('v201FileWarning'))return;const guide=document.getElementById('v200FreshGuide');const n=document.createElement('div');n.id='v201FileWarning';n.className='v201-launch-note';n.innerHTML='<b>DIRECT HTML MODE:</b> Keep this HTML in one permanent location and use the same Chrome/Edge profile. Folder handles are saved per browser origin and may require reconnection in <code>file://</code> mode. Use <b>Dropbox File Sync</b> if you do not want to select a folder on every launch; portable transfers are manual. Existing workspace: use <b>Reload Existing State</b>, never Initialise again.';if(guide)guide.insertAdjacentElement('afterend',n);else document.querySelector('.content')?.insertAdjacentElement('beforebegin',n);}
  const oldRender=window.render;if(typeof oldRender==='function'){window.render=function(){const r=oldRender.apply(this,arguments);label();note();return r;};try{render=window.render}catch(e){}}
@@ -7458,7 +7642,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 </style>
 <script>
 (()=>{'use strict';
- const V203='v2.0.5';
+ const V203='v2.0.6';
  const ID203='TRINETRA_FRESH_2026_10_25';
  const META203='trinetra_fresh_v203_manual_portable_metadata';
  let busy203=false;
@@ -7550,7 +7734,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
    await apply203(payload.state,media,'Dropbox folder '+(st.webkitRelativePath||st.name)+' ('+media.length+' charts, '+missing+' missing)','folder');
   }catch(e){console.error(e);progress203('✕ Folder import failed: '+e.message);alert('Dropbox folder import failed: '+e.message)}finally{ev.target.value='';busy203=false;}
  };
- function label203(){const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";}
+ function label203(){const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";}
  const baseRender203=window.render; if(typeof baseRender203==='function'){window.render=function(){const r=baseRender203.apply(this,arguments);top203();label203();return r;};try{render=window.render}catch(e){}}
  top203();label203();setTimeout(()=>{top203();label203()},1200);setTimeout(label203,4500);
 })();
@@ -7559,15 +7743,15 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 <script>
 // v2.0.4 startup identity (previous HTML/storage schemas unchanged).
 (function(){
- function label(){const x=document.querySelector('.subbrand');if(x)x.textContent="Neel's Trading Universe \u00b7 v2.0.5 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.5";}
+ function label(){const x=document.querySelector('.subbrand');if(x)x.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";}
  label();setTimeout(label,1400);setTimeout(label,5000);
 })();
 </script>
 
-<script id="trinetra_v205_identity_guard">
+<script id="trinetra_v206_identity_guard">
 (()=>{'use strict';
-const LABEL="Neel's Trading Universe · v2.0.5 PWA · Folder Storage";
-const TITLE='TRINETRA — For Long Trades · v2.0.5';
+const LABEL="Neel's Trading Universe · v2.0.6 PWA · Folder Storage";
+const TITLE='TRINETRA — For Long Trades · v2.0.6';
 const node=document.querySelector('.subbrand');
 let adjusting=false;
 function stabilize(){if(adjusting)return;adjusting=true;
@@ -7579,5 +7763,13 @@ stabilize();
 // Existing older one-shot timers finish within 9 seconds; the observer permanently handles changes.
 })();
 </script>
+
+<style id="trinetra206ConflictStyles">
+.v206-conflict{margin-top:12px;padding:12px;border:1px solid #b36b37;background:#291c12;border-radius:11px;font-size:12px;line-height:1.55;}
+.v206-conflict h3{color:#ffd08b;margin:0 0 7px;font-size:14px;}
+.v206-conflict p{margin:8px 0;color:#f5d9b2;}
+.v206-compare{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px 10px;background:#101a2a;padding:10px;border-radius:8px;margin:8px 0;}
+.v206-compare>*{border-bottom:1px solid #334056;padding-bottom:4px;font-size:11px;}
+</style>
 </body>
 </html>
