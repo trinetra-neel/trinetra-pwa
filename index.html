@@ -4316,7 +4316,7 @@ async function flushTombs27(){const a=[...tomb27()];let removed=0;for(const id o
 function statePayload27(){const d=device27();return {type:FS27_STATE_TYPE,workspaceId:'TRINETRA_FRESH_2026_10_25',formatVersion:2,savedAt:now27(),savedBy:{id:d.id,label:d.label||''},media:{external:true,indexFile:'DATA/'+FS27_INDEX},state};}
 async function readState27(){const d=await readJson27(['DATA'],FS27_STATE);if(!d)return null;if(d.type!==FS27_STATE_TYPE||!d.state||d.state.version!==1||d.state.workspaceId!=='TRINETRA_FRESH_2026_10_25'||d.workspaceId!=='TRINETRA_FRESH_2026_10_25')throw new Error('This is not a TRINETRA FRESH START workspace. Select your NEW dedicated Dropbox folder. Existing TRINETRA files are protected.');return d;}
 async function backupRemoteState27(remote){if(!remote)return;await writeJson27(['BACKUP'],`TRINETRA_STATE_${dateStamp27()}.json`,remote);}
-/* v2.0.6: state-content/revision based Dropbox conflict detection.
+/* v2.0.7: state-content/revision based Dropbox conflict detection.
    A newer timestamp by itself is NOT a conflict; clock skew and duplicated metadata
    must never force a reload that discards local work.  When content actually diverges,
    fail closed and offer an explicitly archived, manual resolution. */
@@ -4514,7 +4514,7 @@ window.saveFolderState1827=async function(){
       return alert('Save paused to protect TWO different TRINETRA copies. Your unsaved browser changes are still present. In Folder Storage → Daily Hand-off, review the conflict panel; first download a Backup. Do NOT directly Reload if the latest entries are only on this PC.');
     }
     await commitState206(remote,result.reason);
-  }catch(e){console.error('TRINETRA v2.0.6 folder save',e);progress27('✕ Save failed without replacing Dropbox state: '+e.message);
+  }catch(e){console.error('TRINETRA v2.0.7 folder save',e);progress27('✕ Save failed without replacing Dropbox state: '+e.message);
     alert('Folder Save stopped: '+e.message);}
   finally{saveBusy206=false;}
 };
@@ -4538,7 +4538,7 @@ window.reloadFolderState1827=async function(){
     progress27(`✓ Dropbox state reloaded (saved ${stamp206(remote.savedAt)}). Chart index has ${Object.keys(index27.records||{}).length.toLocaleString('en-IN')} media record(s).`);
     if(typeof render==='function')render();
     await updateStatus27('Reloaded '+remote.savedAt);await renderStorage27();
-  }catch(e){console.error('TRINETRA v2.0.6 reload',e);progress27('✕ Reload stopped: '+e.message);alert('Reload State stopped: '+e.message);}
+  }catch(e){console.error('TRINETRA v2.0.7 reload',e);progress27('✕ Reload stopped: '+e.message);alert('Reload State stopped: '+e.message);}
 };
 
 window.syncMediaCache1827=async function(){if(!root27)return;let ok=await perm27(root27,false,false);if(!ok)ok=await perm27(root27,false,true);if(!ok)return alert('Read permission is required.');try{await loadIndex27();progress27('Synchronising missing chart files into this browser cache…');const n=await hydrateAll27((i,total,e)=>progress27(`Media cache ${i} / ${total} · ${e?.symbol||''}`));progress27(`✓ Media cache up to date · ${n} missing chart(s) loaded this time.`);if(typeof render==='function')render();await renderStorage27();}catch(e){console.error(e);progress27('✕ Media cache sync failed: '+e.message);alert('Sync Media Cache failed: '+e.message);}};
@@ -7248,7 +7248,7 @@ function decisionReviewHTML194(cid){const sets=extractDecision194(cid);return `<
 const openPostBase194=window.openPostReview190;if(typeof openPostBase194==='function')window.openPostReview190=function(cid){const r=openPostBase194.apply(this,arguments);const body=document.querySelector('#postReviewDialog190 .dialog-body');if(body&&!body.querySelector('.v194-review-data'))body.insertAdjacentHTML('afterbegin',decisionReviewHTML194(cid));return r};
 const printPostBase194=window.printPostReview190;if(typeof printPostBase194==='function')window.printPostReview190=async function(cid){const c=state.tradeCycles?.[cid],r=state.postClosingReviews190?.[cid]||{};if(!c)return;const doc=window.open('','_blank');if(!doc)return toast('Allow popup for PDF report');const shots=await idbAll().catch(()=>[]),mp=new Map(shots.map(x=>[x.id,x])),imgs=[...(r.chartIds||[]),...extractDecision194(cid).flatMap(x=>x.chartIds)].filter((x,i,a)=>a.indexOf(x)===i).map(id=>mp.get(id)).filter(x=>x?.data).map(x=>`<img style="max-width:100%;max-height:490px;display:block;margin:10px 0;border:1px solid #bbb;break-inside:avoid" src="${x.data}">`).join('');const x=decisionReviewHTML194(cid).replace(/<button[\s\S]*?<\/button>/g,'')+(typeof window.reviewTradeLogs195==='function'?window.reviewTradeLogs195(cid):'');const html=`<!doctype html><html><head><meta charset="utf-8"><title>${E194(c.symbol)} Post Closing Review</title><style>body{font-family:Arial,sans-serif;color:#182334;max-width:1050px;margin:auto;padding:20px;line-height:1.5}h1{margin-bottom:5px}.muted{color:#526579}.v194-review-data{border:1px solid #bbc9d6;padding:13px;border-radius:6px}.v194-review-data details{margin:7px 0;padding:5px;border-bottom:1px solid #ccc}.v194-review-data details summary{font-weight:bold}.summary-field{padding:3px 0;font-size:12px}button{display:none}.notes{white-space:pre-wrap;padding:12px;border:1px solid #ccc}</style></head><body><h1>${E194(c.symbol)} — Post Closing Review</h1><p>Review date ${E194(r.reviewDate||today194())} · Report generated ${today194()}</p><h2>Post-close observation</h2><div class="notes">${E194(r.notes||'—')}</div><h2>Decision Log data (auto-extracted)</h2>${x}<h2>Linked charts</h2>${imgs||'<p>No linked review charts.</p>'}<script>document.querySelectorAll('details').forEach(x=>x.open=true);setTimeout(()=>window.print(),300)<\/script></body></html>`;doc.document.write(html);doc.document.close()};
 
-function apply194(){ensure194();state.appVersion='2.0.5';if(!MAIN_TABS.some(([k])=>k==='capital'))MAIN_TABS.push(['capital','TRADING CAPITAL']);const capIdx=MAIN_TABS.findIndex(([k])=>k==='capital'),revIdx=MAIN_TABS.findIndex(([k])=>k==='review');if(revIdx>=0&&capIdx>=0&&capIdx<revIdx){MAIN_TABS.splice(capIdx,1);MAIN_TABS.splice(MAIN_TABS.findIndex(([k])=>k==='review')+1,0,['capital','TRADING CAPITAL'])}document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";}
+function apply194(){ensure194();state.appVersion='2.0.7';if(!MAIN_TABS.some(([k])=>k==='capital'))MAIN_TABS.push(['capital','TRADING CAPITAL']);const capIdx=MAIN_TABS.findIndex(([k])=>k==='capital'),revIdx=MAIN_TABS.findIndex(([k])=>k==='review');if(revIdx>=0&&capIdx>=0&&capIdx<revIdx){MAIN_TABS.splice(capIdx,1);MAIN_TABS.splice(MAIN_TABS.findIndex(([k])=>k==='review')+1,0,['capital','TRADING CAPITAL'])}document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.7";const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.7 PWA \u00b7 Folder Storage";}
 const baseRender194=window.render;if(typeof baseRender194==='function')window.render=function(){ensure194();if(ui.main==='capital'){renderNav();document.getElementById('content').innerHTML=renderTradingCapital194();apply194();return;}const r=baseRender194.apply(this,arguments);apply194();const c=document.getElementById('content');if(c&&['mother','daily','weekly','monthly','cup','watch'].includes(ui.main))removeRatingColumn194(c);if(ui.main==='watch')decorateWatch194();if(ui.main==='journal')replaceJournalFin194();return r};try{render=window.render}catch(e){}
 const baseJournal194=window.openJournalCycle18;if(typeof baseJournal194==='function')window.openJournalCycle18=function(cid){const r=baseJournal194.apply(this,arguments);setTimeout(()=>addJournalRibbon194(cid),90);return r};
 const baseStock194=window.renderStockDialog;if(typeof baseStock194==='function')window.renderStockDialog=function(){const r=baseStock194.apply(this,arguments);return r};
@@ -7304,6 +7304,14 @@ console.info('TRINETRA v1.9.4 test patch ready. Existing state and Dropbox path 
 .v195-side textarea{height:43px;min-height:40px;resize:vertical}
 .v195-side input:focus,.v195-side textarea:focus{border-color:#65bceb;outline:none}
 .v195-side .v195-sidehead .v195-zoom-read{color:#bbd7ed;font-size:10px;min-width:30px;text-align:center}
+
+/* v2.0.7 · Entry / Exit view has only two editable fields. */
+.v195-side.bottom-right .v195-sidebody{display:flex;flex-direction:column;gap:9px}
+.v195-side.bottom-right .v195-pair{display:flex;flex-direction:column;gap:5px;margin:0}
+.v195-side.bottom-right .v195-pair label{display:block;padding:0;font-size:11px;letter-spacing:.02em}
+.v195-side.bottom-right .v195-pair input{width:100%;min-height:38px}
+.v195-side.bottom-right .v195-pair textarea{height:198px;min-height:115px;resize:vertical;line-height:1.45}
+
 .v194-decision-workspace.v195-ready>.v195-chartcenter{grid-column:2;grid-row:3 / span 2;min-height:590px;min-width:0}
 .v194-decision-workspace.v195-ready .v195-chartcenter .v194-fields{min-height:590px;max-height:none;padding:9px}
 .v194-decision-workspace.v195-ready .v194-chartviewer{min-height:515px;max-height:67vh;overflow:auto;align-items:flex-start}
@@ -7341,7 +7349,14 @@ function field195(cid,s,key,label,kind='textarea'){
  const field='visual195_'+key, value=X195(s[field]||''),handler=`saveDecisionField190('${X195(cid)}','${X195(ui.decisionStage190?.[cid]||'initial')}','${field}',this.value)`;
  return `<div class="v195-pair"><label>${label}</label>${kind==='input'?`<input aria-label="${label} ${key}" value="${value}" oninput="${handler}">`:`<textarea aria-label="${label} ${key}" oninput="${handler}">${value}</textarea>`}</div>`;
 }
-function panel195(cid,s,position,name,code){return `<section class="v195-side ${position}"><div class="v195-sidehead"><strong>${name}</strong><button title="Zoom out" onclick="zoomSide195(this,-.1)">−</button><span class="v195-zoom-read">100%</span><button title="Zoom in" onclick="zoomSide195(this,.1)">＋</button></div><div class="v195-sidebody">${field195(cid,s,code+'_tf','TF','input')}${field195(cid,s,code+'_index','Index','input')}${field195(cid,s,code+'_ms','MS')}${field195(cid,s,code+'_ma','MA')}${field195(cid,s,code+'_rsi','RSI')}${field195(cid,s,code+'_macd','MACD')}</div></section>`}
+// v2.0.7: only D (Entry / Exit view) uses TF + Description. The other
+// three chart-side panels and all existing saved visual195_D_* fields stay intact.
+function panel195(cid,s,position,name,code){
+ const fields=code==='D'
+  ? field195(cid,s,code+'_tf','TF','input')+field195(cid,s,code+'_description','Description')
+  : field195(cid,s,code+'_tf','TF','input')+field195(cid,s,code+'_index','Index','input')+field195(cid,s,code+'_ms','MS')+field195(cid,s,code+'_ma','MA')+field195(cid,s,code+'_rsi','RSI')+field195(cid,s,code+'_macd','MACD');
+ return `<section class="v195-side ${position}"><div class="v195-sidehead"><strong>${name}</strong><button title="Zoom out" onclick="zoomSide195(this,-.1)">−</button><span class="v195-zoom-read">100%</span><button title="Zoom in" onclick="zoomSide195(this,.1)">＋</button></div><div class="v195-sidebody">${fields}</div></section>`;
+}
 function header195(cid,s){return `<div class="v195-focus-title"><b class="title">DECISION LOG · CHART-FIRST VIEW</b><span class="small-info">${X195(state.tradeCycles?.[cid]?.symbol||'')} · ${X195(ui.decisionStage190?.[cid]||'initial')} · all panels editable &amp; independently zoomable</span><span style="flex:1"></span><button class="btn small" onclick="toggleDetail195(this)">Advanced fields</button><button class="btn small" onclick="backJournal195('${X195(cid)}')">← Journal</button><button class="btn small primary" onclick="backJournal195('${X195(cid)}')">✓ Save &amp; Back</button></div><div class="v195-topline">${[['contextTF','Context TF'],['thesisTF','Thesis TF'],['textureTF','Texture TF']].map(([k,t])=>`<div><label>${t}</label><input list="v195tf" placeholder="M / W / D / H" value="${X195(s['visual195_'+k]||'')}" oninput="save195('${X195(cid)}','visual195_${k}',this.value)"></div>`).join('')}<datalist id="v195tf">${TF195.map(tf=>`<option value="${tf}">`).join('')}</datalist></div>`}
 window.toggleDetail195=function(btn){const root=btn.closest('#decisionPaneNew191,#decisionDialog190'),d=root?.querySelector('.v195-details');if(d){d.open=!d.open;d.scrollIntoView({behavior:'smooth',block:'nearest'})}};
 window.backJournal195=function(cid){try{saveState()}catch(e){}const pane=document.getElementById('decisionPaneNew191');if(pane?.classList.contains('v195-focus')){pane.classList.remove('v195-focus');document.querySelector('#journalDialog18 .v191-jtab[data-pane="journal"]')?.click();toast('Decision Log saved');return;}document.getElementById('decisionModal190')?.classList.remove('show');toast('Decision Log saved')};
@@ -7405,7 +7420,7 @@ window.reviewTradeLogs195=reviewLogs195;
 const postBase195=window.openPostReview190;
 if(typeof postBase195==='function')window.openPostReview190=function(cid){const r=postBase195.apply(this,arguments);const body=document.querySelector('#postReviewDialog190 .dialog-body');if(body&&!body.querySelector('.v195-review-eventlogs'))body.insertAdjacentHTML('afterbegin',reviewLogs195(cid));return r};
 // Product identity guard is UI-only; no capital/portfolio state reset.
-function ident195(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";}
+function ident195(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.7";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.7 PWA \u00b7 Folder Storage";}
 ident195();setTimeout(ident195,3200);
 console.info('TRINETRA v1.9.5 Test: image-reference layout, per-event Trade Log, chart-side decision fields ready');
 })();
@@ -7560,7 +7575,7 @@ window.printTradeLog196=()=>{
  printView196('TRINETRA — '+title,`<header><h1>${escape196(title)}</h1><div class="muted">${escape196(label)}</div></header><table>${rows}</table>`);
 };
 /* Do not write any state into a fresh file or alter the user's Dropbox folder here. */
-function identity196(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";}
+function identity196(){document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.7";const el=document.querySelector('.subbrand');if(el)el.textContent="Neel's Trading Universe \u00b7 v2.0.7 PWA \u00b7 Folder Storage";}
 for(const t of [0,3200,5200,9000])setTimeout(identity196,t);
 console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type timeframes + print available');
 })();
@@ -7575,7 +7590,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 <script>
 (()=>{'use strict';
   const WORKSPACE_ID='TRINETRA_FRESH_2026_10_25';
-  const VERSION='v2.0.6 PWA';
+  const VERSION='v2.0.7 PWA';
   function labelFresh(){
     document.title='TRINETRA — For Long Trades · '+VERSION;
     const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe · "+VERSION+' · Folder Storage';
@@ -7613,7 +7628,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 </style>
 <script>
 (()=>{'use strict';
- const V='v2.0.6 PWA';
+ const V='v2.0.7 PWA';
  function label(){document.title='TRINETRA — For Long Trades · '+V;const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe · "+V+' · Folder Storage';}
  function note(){if(location.protocol!=='file:'||document.getElementById('v201FileWarning'))return;const guide=document.getElementById('v200FreshGuide');const n=document.createElement('div');n.id='v201FileWarning';n.className='v201-launch-note';n.innerHTML='<b>DIRECT HTML MODE:</b> Keep this HTML in one permanent location and use the same Chrome/Edge profile. Folder handles are saved per browser origin and may require reconnection in <code>file://</code> mode. Use <b>Dropbox File Sync</b> if you do not want to select a folder on every launch; portable transfers are manual. Existing workspace: use <b>Reload Existing State</b>, never Initialise again.';if(guide)guide.insertAdjacentElement('afterend',n);else document.querySelector('.content')?.insertAdjacentElement('beforebegin',n);}
  const oldRender=window.render;if(typeof oldRender==='function'){window.render=function(){const r=oldRender.apply(this,arguments);label();note();return r;};try{render=window.render}catch(e){}}
@@ -7642,7 +7657,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 </style>
 <script>
 (()=>{'use strict';
- const V203='v2.0.6';
+ const V203='v2.0.7';
  const ID203='TRINETRA_FRESH_2026_10_25';
  const META203='trinetra_fresh_v203_manual_portable_metadata';
  let busy203=false;
@@ -7734,7 +7749,7 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
    await apply203(payload.state,media,'Dropbox folder '+(st.webkitRelativePath||st.name)+' ('+media.length+' charts, '+missing+' missing)','folder');
   }catch(e){console.error(e);progress203('✕ Folder import failed: '+e.message);alert('Dropbox folder import failed: '+e.message)}finally{ev.target.value='';busy203=false;}
  };
- function label203(){const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";}
+ function label203(){const sub=document.querySelector('.subbrand');if(sub)sub.textContent="Neel's Trading Universe \u00b7 v2.0.7 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.7";}
  const baseRender203=window.render; if(typeof baseRender203==='function'){window.render=function(){const r=baseRender203.apply(this,arguments);top203();label203();return r;};try{render=window.render}catch(e){}}
  top203();label203();setTimeout(()=>{top203();label203()},1200);setTimeout(label203,4500);
 })();
@@ -7743,15 +7758,15 @@ console.info('TRINETRA v1.9.6: capital dates + decision undo/redo + trade type t
 <script>
 // v2.0.4 startup identity (previous HTML/storage schemas unchanged).
 (function(){
- function label(){const x=document.querySelector('.subbrand');if(x)x.textContent="Neel's Trading Universe \u00b7 v2.0.6 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.6";}
+ function label(){const x=document.querySelector('.subbrand');if(x)x.textContent="Neel's Trading Universe \u00b7 v2.0.7 PWA \u00b7 Folder Storage";document.title="TRINETRA \u2014 For Long Trades \u00b7 v2.0.7";}
  label();setTimeout(label,1400);setTimeout(label,5000);
 })();
 </script>
 
 <script id="trinetra_v206_identity_guard">
 (()=>{'use strict';
-const LABEL="Neel's Trading Universe · v2.0.6 PWA · Folder Storage";
-const TITLE='TRINETRA — For Long Trades · v2.0.6';
+const LABEL="Neel's Trading Universe · v2.0.7 PWA · Folder Storage";
+const TITLE='TRINETRA — For Long Trades · v2.0.7';
 const node=document.querySelector('.subbrand');
 let adjusting=false;
 function stabilize(){if(adjusting)return;adjusting=true;
